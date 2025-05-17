@@ -56,16 +56,28 @@ def verify():
 def webhook():
     try:
         data = request.get_json()
-        entry = data['entry'][0]
-        message = entry['changes'][0]['value'].get('messages', [])[0]
+        print("Received Webhook Payload:", json.dumps(data, indent=2))
+
+        entry = data.get('entry', [])[0]
+        changes = entry.get('changes', [])[0]
+        value = changes.get('value', {})
+        messages = value.get('messages', [])
+
+        # Ignore if there are no messages (e.g., webhook ping or message status updates)
+        if not messages:
+            print("No message found in payload. Possibly a status update or verification.")
+            return "ok", 200
+
+        message = messages[0]
         sender = message['from']
         text = message['text']['body']
 
-        # Send to Groq API
-        groq_response = requests.post("http://localhost:8000/generate", json={"prompt": text})
-        reply_text = groq_response.json().get("response", "Sorry, I can't respond now.")
+        # ✅ Call Groq API directly via LangChain
+        response = llm.invoke(text)
+        parsed = response.model_dump_json()
+        reply_text = json.loads(parsed)["content"]
 
-        # Send back via WhatsApp
+        # Send reply via WhatsApp
         requests.post(
             f"https://graph.facebook.com/v18.0/{WHATSAPP_PHONE_NUMBER_ID}/messages",
             headers={
@@ -78,6 +90,7 @@ def webhook():
                 "text": {"body": reply_text}
             }
         )
+
     except Exception as e:
         print("Error:", e)
     return "ok", 200
